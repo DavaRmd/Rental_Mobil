@@ -1,0 +1,3 @@
+- apps/admin-web : Admin dashboard frontend
+- services/api   : Backend API service
+- docs           : Architecture & planning docs
