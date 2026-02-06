@@ -1,0 +1,680 @@
+openapi: 3.0.3
+info:
+  title: Rental Mobil API
+  version: "1.0.0"
+  description: >
+    MVP Backend API untuk Platform Rental Mobil (Admin/Owner). Semua timestamp UTC ISO-8601.
+
+servers:
+  - url: /v1
+
+tags:
+  - name: ops
+  - name: auth
+  - name: dashboard
+  - name: vehicles
+  - name: rentals
+  - name: maintenance
+  - name: audit-logs
+
+paths:
+  /health:
+    get:
+      tags: [ops]
+      summary: Health check (tanpa DB)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /ready:
+    get:
+      tags: [ops]
+      summary: Readiness check (cek DB)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  db: { type: string, example: ok }
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login admin/owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /dashboard/summary:
+    get:
+      tags: [dashboard]
+      security: [{ bearerAuth: [] }]
+      summary: Ringkasan armada
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /vehicles:
+    get:
+      tags: [vehicles]
+      security: [{ bearerAuth: [] }]
+      summary: List vehicles
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/VehicleStatus" }
+        - in: query
+          name: is_active
+          schema: { type: boolean }
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedVehicles"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    post:
+      tags: [vehicles]
+      security: [{ bearerAuth: [] }]
+      summary: Create vehicle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVehicleRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, example: 1 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /vehicles/{id}:
+    get:
+      tags: [vehicles]
+      security: [{ bearerAuth: [] }]
+      summary: Get vehicle detail
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Vehicle"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [vehicles]
+      security: [{ bearerAuth: [] }]
+      summary: Update vehicle
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVehicleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /vehicles/{id}/status:
+    patch:
+      tags: [vehicles]
+      security: [{ bearerAuth: [] }]
+      summary: Patch vehicle status / active (owner-only)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchVehicleStatusRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /rentals:
+    get:
+      tags: [rentals]
+      security: [{ bearerAuth: [] }]
+      summary: List rentals (minimal)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [ACTIVE, COMPLETED, CANCELED] }
+        - in: query
+          name: vehicle_id
+          schema: { type: integer }
+        - in: query
+          name: query
+          schema: { type: string }
+        - in: query
+          name: start_from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: start_to
+          schema: { type: string, format: date-time }
+        - $ref: "#/components/parameters/LimitParam"
+        - $ref: "#/components/parameters/OffsetParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RentalsListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    post:
+      tags: [rentals]
+      security: [{ bearerAuth: [] }]
+      summary: Create rental (locking + trigger)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRentalRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, example: 101 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /rentals/{id}/complete:
+    post:
+      tags: [rentals]
+      security: [{ bearerAuth: [] }]
+      summary: Complete rental
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /rentals/{id}/cancel:
+    post:
+      tags: [rentals]
+      security: [{ bearerAuth: [] }]
+      summary: Cancel rental
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /maintenance:
+    get:
+      tags: [maintenance]
+      security: [{ bearerAuth: [] }]
+      summary: List maintenance logs
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: "#/components/schemas/MaintenanceStatus" }
+        - in: query
+          name: vehicle_id
+          schema: { type: integer }
+        - in: query
+          name: date_from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: date_to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedMaintenance"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    post:
+      tags: [maintenance]
+      security: [{ bearerAuth: [] }]
+      summary: Create maintenance (trigger conflict)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMaintenanceRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer, example: 201 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /maintenance/{id}/complete:
+    post:
+      tags: [maintenance]
+      security: [{ bearerAuth: [] }]
+      summary: Complete maintenance
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /audit-logs:
+    get:
+      tags: [audit-logs]
+      security: [{ bearerAuth: [] }]
+      summary: List audit logs
+      parameters:
+        - in: query
+          name: entity_type
+          schema: { type: string }
+        - in: query
+          name: entity_id
+          schema: { type: integer }
+        - in: query
+          name: user_id
+          schema: { type: integer }
+        - in: query
+          name: date_from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: date_to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PagedAuditLogs"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      in: path
+      name: id
+      required: true
+      schema: { type: integer, minimum: 1 }
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            unauthorized:
+              value:
+                error: { code: UNAUTHORIZED, message: "Token tidak valid atau sudah expired.", details: null }
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            forbidden:
+              value:
+                error: { code: FORBIDDEN, message: "Anda tidak memiliki akses.", details: null }
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            notFound:
+              value:
+                error: { code: NOT_FOUND, message: "Resource tidak ditemukan.", details: null }
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            validation:
+              value:
+                error: { code: VALIDATION_ERROR, message: "Validasi gagal.", details: { field: "end_at", reason: "must be after start_at" } }
+
+    Conflict:
+      description: Conflict (business rule)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            overlap:
+              value:
+                error: { code: RENTAL_OVERLAP, message: "Kendaraan sudah disewa pada rentang waktu tersebut.", details: null }
+
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            svc:
+              value:
+                error: { code: SERVICE_UNAVAILABLE, message: "Service belum siap (DB tidak dapat diakses).", details: null }
+
+  schemas:
+    OkResponse:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    LoginResponse:
+      type: object
+      required: [access_token, user]
+      properties:
+        access_token: { type: string }
+        user:
+          type: object
+          required: [id, name, email, role, created_at]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+            email: { type: string, format: email }
+            role: { type: string, enum: [admin, owner] }
+            created_at: { type: string, format: date-time }
+
+    DashboardSummary:
+      type: object
+      required: [total, available, rented, maintenance]
+      properties:
+        total: { type: integer }
+        available: { type: integer }
+        rented: { type: integer }
+        maintenance: { type: integer }
+
+    VehicleStatus:
+      type: string
+      enum: [AVAILABLE, RENTED, MAINTENANCE, INACTIVE]
+
+    Vehicle:
+      type: object
+      required: [id, name, plate_number, type, price_per_day, status, is_active, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        plate_number: { type: string }
+        type: { type: string }
+        price_per_day: { type: integer }
+        status: { $ref: "#/components/schemas/VehicleStatus" }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    CreateVehicleRequest:
+      type: object
+      required: [name, plate_number, type, price_per_day]
+      properties:
+        name: { type: string }
+        plate_number: { type: string }
+        type: { type: string }
+        price_per_day: { type: integer, minimum: 0 }
+        is_active: { type: boolean, default: true }
+
+    UpdateVehicleRequest:
+      type: object
+      properties:
+        name: { type: string }
+        plate_number: { type: string }
+        type: { type: string }
+        price_per_day: { type: integer, minimum: 0 }
+        is_active: { type: boolean }
+
+    PatchVehicleStatusRequest:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/VehicleStatus" }
+        is_active: { type: boolean }
+
+    PagedVehicles:
+      type: object
+      required: [data, limit, offset]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Vehicle" }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    CreateRentalRequest:
+      type: object
+      required: [vehicle_id, customer_name, start_at, end_at]
+      properties:
+        vehicle_id: { type: integer }
+        customer_name: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+
+    MaintenanceStatus:
+      type: string
+      enum: [ONGOING, DONE]
+
+    CreateMaintenanceRequest:
+      type: object
+      required: [vehicle_id, description]
+      properties:
+        vehicle_id: { type: integer }
+        description: { type: string }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+
+    MaintenanceLog:
+      type: object
+      required: [id, vehicle_id, description, status, created_by, created_at]
+      properties:
+        id: { type: integer }
+        vehicle_id: { type: integer }
+        description: { type: string }
+        start_at: { type: string, format: date-time, nullable: true }
+        end_at: { type: string, format: date-time, nullable: true }
+        status: { $ref: "#/components/schemas/MaintenanceStatus" }
+        created_by: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    PagedMaintenance:
+      type: object
+      required: [data, limit, offset]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/MaintenanceLog" }
+        limit: { type: integer }
+        offset: { type: integer }
+
+    AuditLog:
+      type: object
+      required: [id, entity_type, entity_id, action, performed_by, message, created_at]
+      properties:
+        id: { type: integer }
+        entity_type: { type: string }
+        entity_id: { type: integer }
+        action: { type: string }
+        performed_by: { type: integer }
+        message: { type: string }
+        created_at: { type: string, format: date-time }
+
+    PagedAuditLogs:
+      type: object
+      required: [data, limit, offset]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AuditLog" }
+        limit: { type: integer }
+        offset: { type: integer }
